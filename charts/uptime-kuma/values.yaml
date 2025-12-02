@@ -4,6 +4,26 @@
 
 replicaCount: 1
 
+## Tailscale Funnel Configuration
+## Exposes Uptime Kuma via Tailscale Funnel for secure public access
+tailscale:
+  ## Enable Tailscale sidecar
+  enabled: true
+  ## Tailscale container image
+  image: tailscale/tailscale:v1.76.1
+  ## Machine hostname on Tailscale network
+  hostname: "uptime"
+  ## Your Tailscale domain (tailnet name)
+  domain: "tail108d23.ts.net"
+  ## Tailscale ACL tags (must be allowed in Tailscale ACLs)
+  tags: "tag:uptime-kuma"
+  ## Name of the secret containing TS_AUTHKEY
+  authSecretName: "tailscale-auth-uptime"
+  ## Port to proxy traffic to (uptime-kuma's internal port)
+  proxyPort: 3001
+  ## Size of persistent volume for Tailscale state
+  stateSize: "100Mi"
+
 image:
   repository: louislam/uptime-kuma
   pullPolicy: IfNotPresent
@@ -82,5 +102,71 @@ tolerations: []
 affinity: {}
 
 persistence:
-  enabled: false
-  size: 1Gi
+  enabled: true
+  size: 2Gi
+
+## Extra Kubernetes objects to create (ConfigMaps, PVCs, RBAC for Tailscale)
+extraObjects:
+  # Tailscale serve configuration
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: tailscale-serve-config
+      namespace: "{{ .Release.Namespace }}"
+    data:
+      serve.json: |
+        {
+          "TCP": {
+            "443": {
+              "HTTPS": true
+            }
+          },
+          "Web": {
+            "{{ .Values.tailscale.hostname }}.{{ .Values.tailscale.domain }}:443": {
+              "Handlers": {
+                "/": {
+                  "Proxy": "http://127.0.0.1:{{ .Values.tailscale.proxyPort }}"
+                }
+              }
+            }
+          },
+          "AllowFunnel": {
+            "{{ .Values.tailscale.hostname }}.{{ .Values.tailscale.domain }}:443": true
+          }
+        }
+  # Tailscale state persistence
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: tailscale-state
+      namespace: "{{ .Release.Namespace }}"
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "{{ .Values.tailscale.stateSize }}"
+  # Tailscale RBAC - Role for managing secrets
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: tailscale
+      namespace: "{{ .Release.Namespace }}"
+    rules:
+      - apiGroups: [""]
+        resources: ["secrets"]
+        verbs: ["create", "get", "update", "patch", "delete"]
+  # Tailscale RBAC - RoleBinding
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: tailscale
+      namespace: "{{ .Release.Namespace }}"
+    subjects:
+      - kind: ServiceAccount
+        name: "{{ include \"uptime-kuma.serviceAccountName\" . }}"
+        namespace: "{{ .Release.Namespace }}"
+    roleRef:
+      kind: Role
+      name: tailscale
+      apiGroup: rbac.authorization.k8s.io
