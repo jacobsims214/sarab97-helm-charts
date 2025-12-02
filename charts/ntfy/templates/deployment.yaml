@@ -37,15 +37,16 @@ spec:
             - -c
             - |
               # Check if user already exists
-              if ntfy user list 2>/dev/null | grep -q "^user {{ .Values.adminUser.username }}"; then
+              if ntfy user list 2>/dev/null | grep -q "user {{ .Values.adminUser.username }}"; then
                 echo "Admin user '{{ .Values.adminUser.username }}' already exists, skipping creation"
               else
                 echo "Creating admin user '{{ .Values.adminUser.username }}'..."
-                ntfy user add --role=admin --password="$NTFY_ADMIN_PASSWORD" {{ .Values.adminUser.username }}
+                ntfy user add --role=admin {{ .Values.adminUser.username }}
                 echo "Admin user created successfully"
               fi
           env:
-            - name: NTFY_ADMIN_PASSWORD
+            # NTFY_PASSWORD is the env var ntfy uses for non-interactive password input
+            - name: NTFY_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: "{{ .Values.adminUser.secretName }}"
