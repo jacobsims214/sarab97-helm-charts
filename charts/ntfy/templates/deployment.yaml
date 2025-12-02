@@ -60,6 +60,32 @@ spec:
               port: 80
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+        {{- if .Values.tailscale.enabled }}
+        - name: tailscale
+          image: "{{ .Values.tailscale.image }}"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.tailscale.authSecretName }}"
+                  key: TS_AUTHKEY
+            - name: TS_STATE_DIR
+              value: "/var/lib/tailscale"
+            - name: TS_SERVE_CONFIG
+              value: "/config/serve.json"
+            - name: TS_USERSPACE
+              value: "true"
+            - name: TS_HOSTNAME
+              value: "{{ .Values.tailscale.hostname }}"
+            - name: TS_EXTRA_ARGS
+              value: "--advertise-tags={{ .Values.tailscale.tags }}"
+          volumeMounts:
+            - name: tailscale-state
+              mountPath: /var/lib/tailscale
+            - name: tailscale-config
+              mountPath: /config
+        {{- end }}
       volumes:
         {{- if .Values.config.enabled }}
         - name: {{ template "ntfy.name" . }}-conf
@@ -72,7 +98,15 @@ spec:
             claimName: {{ template "ntfy.fullname" . }}
 {{- else }}
           emptyDir: {}
-{{- end -}}
+{{- end }}
+        {{- if .Values.tailscale.enabled }}
+        - name: tailscale-state
+          persistentVolumeClaim:
+            claimName: tailscale-state
+        - name: tailscale-config
+          configMap:
+            name: tailscale-serve-config
+        {{- end -}}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

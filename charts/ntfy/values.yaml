@@ -4,6 +4,27 @@
 
 replicaCount: 1
 
+## Tailscale Funnel Configuration
+## Exposes ntfy via Tailscale Funnel for secure public access
+## Create auth secret with: kubectl create secret generic tailscale-auth --from-literal=TS_AUTHKEY=tskey-auth-xxx -n <namespace>
+tailscale:
+  ## Enable Tailscale sidecar
+  enabled: true
+  ## Tailscale container image
+  image: tailscale/tailscale:v1.76.1
+  ## Machine hostname on Tailscale network
+  hostname: "ntfy"
+  ## Your Tailscale domain (tailnet name)
+  domain: "tail108d23.ts.net"
+  ## Tailscale ACL tags (must be allowed in Tailscale ACLs)
+  tags: "tag:ntfy"
+  ## Name of the secret containing TS_AUTHKEY
+  authSecretName: "tailscale-auth-ntfy"
+  ## Port to proxy traffic to (ntfy's internal port)
+  proxyPort: 80
+  ## Size of persistent volume for Tailscale state
+  stateSize: "100Mi"
+
 image:
   repository: binwiederhier/ntfy
   pullPolicy: IfNotPresent
@@ -77,9 +98,10 @@ autoscaling:
 
 
 config:
-  enabled: false
+  enabled: true
   data:
-    base-url: "https://example.com"
+    ## When using Tailscale Funnel, set base-url to your Tailscale hostname
+    base-url: "https://ntfy.tail108d23.ts.net"
     auth-file: "/var/cache/ntfy/user.db"
     auth-default-access: "deny-all"
     cache-file: "/var/cache/ntfy/cache.db"
@@ -94,5 +116,71 @@ tolerations: []
 affinity: {}
 
 persistence:
-  enabled: false
-  size: 200Mi
+  enabled: true
+  size: 1Gi
+
+## Extra Kubernetes objects to create (ConfigMaps, PVCs, RBAC for Tailscale)
+extraObjects:
+  # Tailscale serve configuration
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: tailscale-serve-config
+      namespace: "{{ .Release.Namespace }}"
+    data:
+      serve.json: |
+        {
+          "TCP": {
+            "443": {
+              "HTTPS": true
+            }
+          },
+          "Web": {
+            "{{ .Values.tailscale.hostname }}.{{ .Values.tailscale.domain }}:443": {
+              "Handlers": {
+                "/": {
+                  "Proxy": "http://127.0.0.1:{{ .Values.tailscale.proxyPort }}"
+                }
+              }
+            }
+          },
+          "AllowFunnel": {
+            "{{ .Values.tailscale.hostname }}.{{ .Values.tailscale.domain }}:443": true
+          }
+        }
+  # Tailscale state persistence
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: tailscale-state
+      namespace: "{{ .Release.Namespace }}"
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "{{ .Values.tailscale.stateSize }}"
+  # Tailscale RBAC - Role for managing secrets
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: tailscale
+      namespace: "{{ .Release.Namespace }}"
+    rules:
+      - apiGroups: [""]
+        resources: ["secrets"]
+        verbs: ["create", "get", "update", "patch", "delete"]
+  # Tailscale RBAC - RoleBinding
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: tailscale
+      namespace: "{{ .Release.Namespace }}"
+    subjects:
+      - kind: ServiceAccount
+        name: "{{ include \"ntfy.serviceAccountName\" . }}"
+        namespace: "{{ .Release.Namespace }}"
+    roleRef:
+      kind: Role
+      name: tailscale
+      apiGroup: rbac.authorization.k8s.io
