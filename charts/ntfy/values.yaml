@@ -102,6 +102,10 @@ config:
   data:
     ## When using Tailscale Funnel, set base-url to your Tailscale hostname
     base-url: "https://ntfy.tail108d23.ts.net"
+    ## Upstream server for iOS push notifications
+    ## Required for instant iOS notifications on self-hosted servers
+    ## ntfy.sh has the Apple APNs certificates needed for iOS push
+    upstream-base-url: "https://ntfy.sh"
     auth-file: "/var/cache/ntfy/user.db"
     auth-default-access: "deny-all"
     cache-file: "/var/cache/ntfy/cache.db"
