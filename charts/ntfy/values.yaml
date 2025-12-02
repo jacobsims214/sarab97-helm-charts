@@ -108,6 +108,17 @@ config:
     attachment-cache-dir: "/var/cache/ntfy/attachments"
     behind-proxy: true
 
+## Admin User Configuration
+## Creates a default admin user on first deployment
+## Create secret with: ./tools/apps/create-ntfy-admin-secret.sh
+adminUser:
+  enabled: true
+  ## Username for the admin user
+  username: "admin"
+  ## Name of the secret containing the admin password
+  ## Secret must have key: NTFY_ADMIN_PASSWORD
+  secretName: "ntfy-admin"
+
 
 nodeSelector: {}
 

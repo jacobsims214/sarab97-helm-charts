@@ -27,6 +27,39 @@ spec:
       serviceAccountName: {{ include "ntfy.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.adminUser.enabled }}
+      initContainers:
+        - name: create-admin-user
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Check if user already exists
+              if ntfy user list 2>/dev/null | grep -q "^user {{ .Values.adminUser.username }}"; then
+                echo "Admin user '{{ .Values.adminUser.username }}' already exists, skipping creation"
+              else
+                echo "Creating admin user '{{ .Values.adminUser.username }}'..."
+                ntfy user add --role=admin --password="$NTFY_ADMIN_PASSWORD" {{ .Values.adminUser.username }}
+                echo "Admin user created successfully"
+              fi
+          env:
+            - name: NTFY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.adminUser.secretName }}"
+                  key: NTFY_ADMIN_PASSWORD
+          volumeMounts:
+            - mountPath: /var/cache/ntfy
+              name: {{ template "ntfy.name" . }}
+            {{- if .Values.config.enabled }}
+            - mountPath: /etc/ntfy/server.yml
+              name: {{ template "ntfy.name" . }}-conf
+              subPath: server.yml
+              readOnly: true
+            {{- end }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:

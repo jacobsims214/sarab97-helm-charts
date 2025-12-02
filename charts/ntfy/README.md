@@ -69,7 +69,26 @@ kubectl create secret generic tailscale-auth-ntfy \
   --from-literal=TS_AUTHKEY="tskey-auth-xxxxx-yyyyy"
 ```
 
-### Step 4: Configure values.yaml
+### Step 4: Create Admin User Secret
+
+The chart automatically creates an admin user on first deployment. Create the secret with the admin password:
+
+```bash
+# Using the provided script (generates random password)
+./tools/apps/create-ntfy-admin-secret.sh
+
+# Or with your own password
+./tools/apps/create-ntfy-admin-secret.sh "YourSecurePassword"
+
+# Or manually
+kubectl create secret generic ntfy-admin \
+  --namespace ntfy \
+  --from-literal=NTFY_ADMIN_PASSWORD="YourSecurePassword"
+```
+
+**Save the generated password!** You'll need it to log in.
+
+### Step 5: Configure values.yaml
 
 The default values are pre-configured for Tailscale. Update these settings for your environment:
 
@@ -85,9 +104,14 @@ config:
   enabled: true
   data:
     base-url: "https://ntfy.your-tailnet.ts.net"
+
+adminUser:
+  enabled: true
+  username: "admin"
+  secretName: "ntfy-admin"
 ```
 
-### Step 5: Deploy
+### Step 6: Deploy
 
 ```bash
 helm install ntfy ./charts/ntfy -n ntfy
@@ -132,6 +156,50 @@ Your ntfy instance will be accessible at: `https://ntfy.your-tailnet.ts.net`
 | `config.data.auth-default-access` | Default auth access | `deny-all` |
 | `persistence.enabled` | Enable persistent storage | `true` |
 | `persistence.size` | Storage size | `1Gi` |
+
+### Admin User Settings
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `adminUser.enabled` | Auto-create admin user on deployment | `true` |
+| `adminUser.username` | Admin username | `admin` |
+| `adminUser.secretName` | Secret containing NTFY_ADMIN_PASSWORD | `ntfy-admin` |
+
+## Authentication
+
+The chart is configured with `auth-default-access: deny-all` by default, which means:
+- All topics require authentication
+- Users must log in to subscribe or publish
+
+### Adding More Users
+
+After deployment, you can add additional users:
+
+```bash
+# Exec into the ntfy container
+kubectl exec -it -n ntfy deployment/ntfy -c ntfy -- sh
+
+# Add a regular user
+ntfy user add username
+
+# Add user with specific role
+ntfy user add --role=admin anotheradmin
+
+# Grant topic access
+ntfy access username mytopic rw    # read-write
+ntfy access username alerts ro     # read-only
+
+# List users
+ntfy user list
+```
+
+### Access Tokens
+
+For programmatic access, you can create access tokens:
+
+```bash
+kubectl exec -it -n ntfy deployment/ntfy -c ntfy -- ntfy token add username
+```
 
 ## Traditional Ingress (Alternative)
 
